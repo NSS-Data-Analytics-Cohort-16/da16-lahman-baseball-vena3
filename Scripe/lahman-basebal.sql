@@ -1,6 +1,7 @@
 -- 1. What range of years for baseball games played does the provided database cover? 
 
-select max(yearid), min(yearid) 
+select max(yearid),
+       min(yearid) 
 from appearances 
 
 
@@ -157,34 +158,137 @@ most_win_teams as (
 select *
 from homegames
 
-select avg(attendance::numeric)
-from homegames
 
-with top_avg as
-             select p.park_name, t.name,
-			 round(sum(h.attendance::numeric) / sum(h.games::numeric), 0) as avg_attendance
+with top_avg as(
+             select p.park_name, h.attendance, h.games, t.name,
+			 round(sum(h.attendance::numeric) / sum(h.games::numeric), 0) as attendance_per_game
 			 from  homegames as h
 			 inner join parks as p
 			 on h.park = p.park
 			 inner join teams as t
 			 on h.team = t.teamid  and h.year = t.yearid
 			 where year = 2016
-			 group by p.park_name, t.name
-			 order by avg_attendance DESC
-			 limit 5
+			 group by p.park_name, t.name, h.games, h.attendance
+			 order by attendance_per_game DESC
+			 limit 5)
 
--- 9. Which managers have won the TSN Manager of the Year award in both the National League (NL) and the American League (AL)? Give their full name and the teams that they were managing when they won the award.
+select *
+from top_avg
 
--- 10. Find all players who hit their career highest number of home runs in 2016. Consider only players who have played in the league for at least 10 years, and who hit at least one home run in 2016. Report the players' first and last names and the number of home runs they hit in 2016.
+order by attendance_per_game DESC
+
+
+-- 9. Which managers have won the TSN Manager of the Year award in both the National League (NL) and the American League (AL)?
+--Give their full name and the teams that they were managing when they won the award.
+
+WITH both_league_winners AS (
+	SELECT
+		playerid
+	FROM awardsmanagers
+	WHERE awardid = 'TSN Manager of the Year'
+		AND lgid IN ('AL', 'NL')
+	GROUP BY playerid
+	HAVING COUNT(DISTINCT lgid) = 2
+	) -- there are only 2 people that fit this criteria.
+
+-- SELECT 
+-- 	* 
+-- FROM awardsmanagers 
+-- WHERE awardid = 'TSN Manager of the Year' 
+-- 	AND  lgid IN ('AL', 'NL')
+-- G-- 100 rows total --60 rows won in both
+
+
+SELECT
+	namefirst || ' ' || namelast AS full_name,
+	yearid,
+	lgid,
+	name
+FROM people
+INNER JOIN both_league_winners
+	USING(playerid)
+INNER JOIN awardsmanagers
+	USING(playerid)
+INNER JOIN managers
+	USING(playerid, yearid, lgid)
+INNER JOIN teams
+	USING(teamid,yearid,lgid)
+WHERE awardid = 'TSN Manager of the Year'
+ORDER BY full_name, yearid;
+
+
+-- 10. Find all players who hit their career highest number of home runs in 2016.
+-- Consider only players who have played in the league for at least 10 years,
+-- and who hit at least one home run in 2016. 
+-- Report the players' first and last names and the number of home runs they hit in 2016.
+
+select *
+from batting
+
+
+with player_10 as (
+              select playerid
+			  from batting
+			  group by 1
+			  having count(distinct yearid) >= 10),
+player_hr as(
+             select playerid
+			 from batting
+			 where yearid = 2016 and hr >0),
+home_runs as(  
+             select namefirst || ' ' || namelast AS full_name,
+			 b.yearid, b.hr,
+			 row_number () over(partition by b.playerid 
+			 order by b.hr DESC,
+			 b.yearid DESC) maxhr
+             from batting as b
+			 inner join people as p
+			 on b.playerid = p.playerid
+			 where b.playerid in ( select*
+			                       from player_10)
+		     and b.playerid in (select *
+			                     from player_hr)) 
+select full_name, hr
+from home_runs
+where maxhr = 1 and yearid = 2016
+
+			 
+       
+
+
 
 
 -- **Open-ended questions**
 
--- 11. Is there any correlation between number of wins and team salary? Use data from 2000 and later to answer this question. As you do this analysis, keep in mind that salaries across the whole league tend to increase together, so you may want to look on a year-by-year basis.
+-- 11. Is there any correlation between number of wins and team salary?
+-- Use data from 2000 and later to answer this question. As you do this analysis,
+-- keep in mind that salaries across the whole league tend to increase together,
+-- so you may want to look on a year-by-year basis.
 
+with avg_salary as (select  teamid, avg(salary)
+                    from Salaries
+                     where yearid >= 2000
+					 group by yearid)
+
+avg_wins as  (select teamid, W
+               from teams
+               where yearid >= 2000)
+
+SELECT yearid,
+    (SUM((w - avg_w) * (salary - avg_salary)) / COUNT(*)) /
+    (SQRT(SUM(POWER(w - avg_w, 2)) / COUNT(*)) * SQRT(SUM(POWER(salary - avg_salary, 2)) / COUNT(*))) AS correlation
+FROM (
+    
+
+	
 -- 12. In this question, you will explore the connection between number of wins and attendance.
 --   *  Does there appear to be any correlation between attendance at home games and number of wins? </li>
---   *  Do teams that win the world series see a boost in attendance the following year? What about teams that made the playoffs? Making the playoffs means either being a division winner or a wild card winner.
+--   *  Do teams that win the world series see a boost in attendance the following year?
+-- What about teams that made the playoffs? Making the playoffs means either being a division winner or a wild card winner.
 
--- 13. It is thought that since left-handed pitchers are more rare, causing batters to face them less often, that they are more effective. Investigate this claim and present evidence to either support or dispute this claim. First, determine just how rare left-handed pitchers are compared with right-handed pitchers. Are left-handed pitchers more likely to win the Cy Young Award? Are they more likely to make it into the hall of fame?
+-- 13. It is thought that since left-handed pitchers are more rare,
+-- causing batters to face them less often, that they are more effective. 
+-- Investigate this claim and present evidence to either support or dispute this claim. First,
+-- determine just how rare left-handed pitchers are compared with right-handed pitchers.
+-- Are left-handed pitchers more likely to win the Cy Young Award? Are they more likely to make it into the hall of fame?
 
