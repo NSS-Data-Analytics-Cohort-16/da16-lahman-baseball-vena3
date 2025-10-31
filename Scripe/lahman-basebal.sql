@@ -21,7 +21,8 @@ from appearances;
 select *
 from teams;
 
-select concat(namefirst, ' ', namelast) as full_name, p.height,
+select concat(namefirst, ' ', namelast) as full_name, 
+       p.height,
        a.g_all as total_games, t.name as team_name
 from people as p
 left join appearances as a
@@ -71,14 +72,14 @@ select *
 from fielding
 
 select 
-       case when pos in ('of') then  'outfield'
-	        when pos in ('ss', '1B', '2B', 'B3') then 'Infield'
+       case when pos in ('OF') then  'Outfield'
 			when pos in  ('P', 'C') then 'Battery'
-			end as position_group,
-			sum (po) as total_po
-from fielding as p
+			else 'Infield'
+			end as position,
+			sum (po) as total_putouts
+from fielding 
 where yearid = 2016 
-group by position_group
+group by position
 
 
 
@@ -91,11 +92,11 @@ group by position_group
 --- teams (Strikeouts by batters) as so
 ----g game 
 
-select *
-from pitching
+
 
 select *
 from teams
+
 
 select yearid / 10 * 10 as decades,
        round(sum(so)::numeric / sum(g)::numeric,2) as so_per_game,
@@ -117,11 +118,18 @@ where yearid = 2016
 
 with stolen_base as(
                  select  playerid,
-			             round (sum(sb)::numeric / sum(sb)::numeric + sum (cs)::numeric) 
+			             round (sum(sb)::numeric / (sum(sb) + sum (cs))::numeric ,2) as sb_success
                   from  batting 
 				  where  yearid = 2016
 				  group by playerid
 				  having sum(sb + cs) > 19
+				  order by sb_success DESC)
+				  
+select p.namefirst || ' ' || namelast AS full_name,
+       s.sb_success
+from people as p
+inner join stolen_base as s
+using (playerid)
 				  
    
 				  
@@ -189,15 +197,7 @@ WITH both_league_winners AS (
 		AND lgid IN ('AL', 'NL')
 	GROUP BY playerid
 	HAVING COUNT(DISTINCT lgid) = 2
-	) -- there are only 2 people that fit this criteria.
-
--- SELECT 
--- 	* 
--- FROM awardsmanagers 
--- WHERE awardid = 'TSN Manager of the Year' 
--- 	AND  lgid IN ('AL', 'NL')
--- G-- 100 rows total --60 rows won in both
-
+	) 
 
 SELECT
 	namefirst || ' ' || namelast AS full_name,
@@ -265,20 +265,30 @@ where maxhr = 1 and yearid = 2016
 -- keep in mind that salaries across the whole league tend to increase together,
 -- so you may want to look on a year-by-year basis.
 
-with avg_salary as (select  teamid, avg(salary)
-                    from Salaries
-                     where yearid >= 2000
-					 group by yearid)
+with year_avg as 
+              select yearid
+			  avg(salary) as avg_salary
+			  avg(w) as avg_wins
+			  from salaries as s
+			  inner join teams as t
+			  on s.teamid = t.teamid  and s.yearid = t.yearid
+			  where yearid >= 2000
+			  group by yearid
 
-avg_wins as  (select teamid, W
-               from teams
-               where yearid >= 2000)
-
-SELECT yearid,
-    (SUM((w - avg_w) * (salary - avg_salary)) / COUNT(*)) /
-    (SQRT(SUM(POWER(w - avg_w, 2)) / COUNT(*)) * SQRT(SUM(POWER(salary - avg_salary, 2)) / COUNT(*))) AS correlation
-FROM (
+ 
+from Teams as t
+join Salaries as s 
+    on t.teamid = s.teamid and t.yearid = s.yearid
+join avg_salary as a 
+   using(teamid)
+join avg_wins aw 
+    on t.teamid = aw.teamid
+where t.yearid >= 2000
+group by Salaries, teamid
     
+
+
+
 
 	
 -- 12. In this question, you will explore the connection between number of wins and attendance.
